@@ -1,0 +1,43 @@
+[project]
+name = "site-ranker"
+version = "0.1.0"
+description = "Prioritize pirate video streaming sites by traffic volume for anti-piracy research"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0",
+    "polars>=0.20",
+    "pyarrow>=14.0",
+    "httpx>=0.26",
+    "beautifulsoup4>=4.12",
+    "tldextract>=5.1",
+    "python-whois>=0.9",
+    "scikit-learn>=1.4",
+    "xgboost>=2.0",
+    "rich>=13.0",
+    "pydantic>=2.5",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.1",
+    "ipykernel>=6.0",
+    "jupyter>=1.0",
+]
+
+[project.scripts]
+rank-sites = "scripts.rank_sites:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
