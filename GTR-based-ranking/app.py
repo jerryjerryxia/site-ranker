@@ -94,11 +94,21 @@ st.markdown("""
 def load_gtr_data(use_full_dataset: bool = False):
     """Load and cache the GTR enriched data."""
     base_path = Path(__file__).parent.parent / "data" / "processed"
+    sample_path = Path(__file__).parent / "sample_data.parquet"
     
+    # Try full data paths first, fall back to sample for cloud deployment
     if use_full_dataset:
         data_path = base_path / "google_transparency_enriched.parquet"
     else:
         data_path = base_path / "video_piracy_clean.parquet"
+    
+    if not data_path.exists():
+        # Fall back to sample data (for Streamlit Cloud)
+        if sample_path.exists():
+            data_path = sample_path
+        else:
+            st.error("No data file found. Please ensure data files are available.")
+            st.stop()
     
     df = pd.read_parquet(data_path)
     
