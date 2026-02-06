@@ -3,6 +3,10 @@ data/
 *.parquet
 *.csv
 
+# Exception: online status for deployment
+!GTR-based-ranking/data/
+!GTR-based-ranking/data/online_status.csv
+
 # Python
 __pycache__/
 *.py[cod]
