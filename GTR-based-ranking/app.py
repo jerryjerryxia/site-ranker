@@ -91,6 +91,17 @@ st.markdown("""
 
 
 @st.cache_data(ttl=3600)
+def load_online_status() -> pd.DataFrame | None:
+    """Load online status data if available."""
+    status_path = Path(__file__).parent / "data" / "online_status.csv"
+    if status_path.exists():
+        df = pd.read_csv(status_path)
+        # Keep only latest check per domain
+        df = df.sort_values("checked_at").drop_duplicates("domain", keep="last")
+        return df
+    return None
+
+
 def load_gtr_data(use_full_dataset: bool = False):
     """Load and cache the GTR enriched data."""
     base_path = Path(__file__).parent.parent / "data" / "processed"
@@ -116,6 +127,21 @@ def load_gtr_data(use_full_dataset: bool = False):
     for col in ['first_major_org_date', 'last_major_org_date']:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors='coerce')
+    
+    # Merge online status if available
+    online_df = load_online_status()
+    if online_df is not None:
+        df = df.merge(
+            online_df[["domain", "online", "ip", "country", "asn", "as_name"]],
+            left_on="Domain",
+            right_on="domain",
+            how="left"
+        ).drop(columns=["domain"], errors="ignore")
+        df["online"] = df["online"].fillna(False)
+        df["online_status"] = df["online"].map({True: "Online", False: "Offline/Unknown"})
+    else:
+        df["online"] = None
+        df["online_status"] = "Not Checked"
     
     df = enrich_domain_data(df)
     return df
@@ -241,7 +267,7 @@ def render_filters(df: pd.DataFrame) -> pd.DataFrame:
     """Filter row with dropdowns always visible."""
     
     # All filters in one row with consistent labels
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
+    c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2])
     
     with c1:
         search = st.text_input("Search", placeholder="Enter domain...", label_visibility="visible")
@@ -251,6 +277,9 @@ def render_filters(df: pd.DataFrame) -> pd.DataFrame:
         trend_filter = st.multiselect("Trend", ['Rising', 'Stable', 'Declining', 'No Data'], placeholder="All")
     with c4:
         tier_filter = st.multiselect("Volume", ['1M+', '100K-1M', '10K-100K', '1K-10K', '<1K'], placeholder="All")
+    with c5:
+        online_options = df['online_status'].dropna().unique().tolist()
+        online_filter = st.multiselect("Online", online_options, placeholder="All")
     
     # Apply filters
     filtered = df.copy()
@@ -262,6 +291,8 @@ def render_filters(df: pd.DataFrame) -> pd.DataFrame:
         filtered = filtered[filtered['trend'].isin(trend_filter)]
     if tier_filter:
         filtered = filtered[filtered['volume_tier'].isin(tier_filter)]
+    if online_filter:
+        filtered = filtered[filtered['online_status'].isin(online_filter)]
     
     return filtered
 
@@ -493,22 +524,23 @@ def render_domain_detail(df: pd.DataFrame):
     
     st.divider()
     
-    # Three column layout
-    col1, col2, col3 = st.columns(3)
+    # Four column layout (hosting info if available)
+    has_hosting = pd.notna(row.get('online'))
+    cols = st.columns(4 if has_hosting else 3)
     
-    with col1:
+    with cols[0]:
         st.markdown("**Notice Activity**")
         st.metric("URLs Removed", format_number(row['total_urls_removed']))
         st.metric("Total Requests", format_number(row['total_requests']))
         st.metric("Removal Rate", f"{row['removal_rate']*100:.1f}%")
     
-    with col2:
+    with cols[1]:
         st.markdown("**Recent Activity**")
         st.metric("Last 30 Days", format_number(row['major_org_requests_last_30d']))
         st.metric("Last 90 Days", format_number(row['major_org_requests_last_90d']))
         st.metric("Monthly Velocity", format_number(row['major_org_velocity_per_month']))
     
-    with col3:
+    with cols[2]:
         st.markdown("**Enforcement**")
         st.write(f"**Major Orgs:** {row['unique_major_orgs']}")
         st.write(f"**Studios:** {row['unique_major_studios']}")
@@ -516,6 +548,20 @@ def render_domain_detail(df: pd.DataFrame):
         st.write(f"**Last Active:** {format_date(row['last_major_org_date'])}")
         if row['days_since_last_activity'] < 9999:
             st.write(f"**Days Inactive:** {row['days_since_last_activity']:.0f}")
+    
+    if has_hosting:
+        with cols[3]:
+            st.markdown("**Hosting Info**")
+            online_icon = "🟢" if row.get('online') else "🔴"
+            st.write(f"{online_icon} **{row.get('online_status', 'Unknown')}**")
+            if row.get('ip'):
+                st.write(f"**IP:** `{row['ip']}`")
+            if row.get('country'):
+                st.write(f"**Country:** {row['country']}")
+            if row.get('as_name'):
+                st.write(f"**Host:** {row['as_name']}")
+            if row.get('asn'):
+                st.write(f"**ASN:** {row['asn']}")
 
 
 def main():
