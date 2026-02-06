@@ -131,17 +131,23 @@ def load_gtr_data(use_full_dataset: bool = False):
     # Merge online status if available
     online_df = load_online_status()
     if online_df is not None:
+        # Select columns that exist in the online status CSV
+        merge_cols = ["domain", "online_status", "ip", "country", "asn", "as_name", "http_status"]
+        available_cols = [c for c in merge_cols if c in online_df.columns]
+        
         df = df.merge(
-            online_df[["domain", "online", "ip", "country", "asn", "as_name"]],
+            online_df[available_cols],
             left_on="Domain",
             right_on="domain",
             how="left"
         ).drop(columns=["domain"], errors="ignore")
-        df["online"] = df["online"].fillna(False)
-        df["online_status"] = df["online"].map({True: "Online", False: "Offline/Unknown"})
+        df["online_status"] = df["online_status"].fillna("Not Checked")
     else:
-        df["online"] = None
         df["online_status"] = "Not Checked"
+        df["ip"] = None
+        df["country"] = None
+        df["asn"] = None
+        df["as_name"] = None
     
     df = enrich_domain_data(df)
     return df
@@ -525,7 +531,7 @@ def render_domain_detail(df: pd.DataFrame):
     st.divider()
     
     # Four column layout (hosting info if available)
-    has_hosting = pd.notna(row.get('online'))
+    has_hosting = row.get('online_status') not in [None, "Not Checked"]
     cols = st.columns(4 if has_hosting else 3)
     
     with cols[0]:
@@ -552,8 +558,17 @@ def render_domain_detail(df: pd.DataFrame):
     if has_hosting:
         with cols[3]:
             st.markdown("**Hosting Info**")
-            online_icon = "🟢" if row.get('online') else "🔴"
-            st.write(f"{online_icon} **{row.get('online_status', 'Unknown')}**")
+            status_icons = {
+                "Online": "🟢",
+                "Offline": "🔴",
+                "Parked": "🅿️",
+                "Blocked/Seized": "🚫",
+                "Unknown": "❓",
+                "Not Checked": "⚪",
+            }
+            online_status = row.get('online_status', 'Unknown')
+            icon = status_icons.get(online_status, "❓")
+            st.write(f"{icon} **{online_status}**")
             if row.get('ip'):
                 st.write(f"**IP:** `{row['ip']}`")
             if row.get('country'):
