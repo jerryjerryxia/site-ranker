@@ -131,6 +131,11 @@ def load_gtr_data(use_full_dataset: bool = False):
     # Merge online status if available
     online_df = load_online_status()
     if online_df is not None:
+        # Handle both old format (online boolean) and new format (online_status string)
+        if "online_status" not in online_df.columns and "online" in online_df.columns:
+            # Convert old boolean format to new string format
+            online_df["online_status"] = online_df["online"].map({True: "Online", False: "Offline"})
+        
         # Select columns that exist in the online status CSV
         merge_cols = ["domain", "online_status", "ip", "country", "asn", "as_name", "http_status"]
         available_cols = [c for c in merge_cols if c in online_df.columns]

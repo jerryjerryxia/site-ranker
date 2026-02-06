@@ -2,6 +2,10 @@
 """
 Batch domain online status checker with content-aware classification.
 
+Hybrid approach:
+1. Fast DNS pass on all domains
+2. HTTP + content analysis only for DNS-success domains
+
 Categories:
 - Online: Site responds and appears functional
 - Offline: DNS fails or site doesn't respond
@@ -32,7 +36,6 @@ from config import DATASETS
 
 # Detection patterns
 PARKED_INDICATORS = [
-    # Domain parking services
     r'domain\s*(is\s*)?(for\s+)?sale',
     r'buy\s+this\s+domain',
     r'domain\s+parking',
@@ -58,7 +61,6 @@ PARKED_INDICATORS = [
 ]
 
 SEIZED_INDICATORS = [
-    # Law enforcement
     r'seized\s+by',
     r'domain\s+(has\s+been\s+)?seized',
     r'this\s+domain\s+has\s+been\s+seized',
@@ -72,17 +74,15 @@ SEIZED_INDICATORS = [
     r'criminal\s+investigation',
     r'department\s+of\s+justice',
     r'homeland\s+security',
-    r'operation\s+\w+',  # Operation [Name]
+    r'operation\s+\w+',
     r'this\s+site\s+has\s+been\s+blocked',
     r'court\s+order',
     r'mpaa.*seized',
     r'riaa.*seized',
     r'takedown.*order',
-    # Common seizure page text
     r'violat(ed?|ing)\s+(federal|copyright|intellectual\s+property)',
 ]
 
-# Compile patterns for efficiency
 PARKED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in PARKED_INDICATORS]
 SEIZED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in SEIZED_INDICATORS]
 
@@ -126,9 +126,8 @@ def fetch_page(domain: str, timeout: float = 10.0) -> tuple[int | None, str]:
                 headers=headers,
                 timeout=timeout,
                 allow_redirects=True,
-                verify=False  # Some piracy sites have bad certs
+                verify=False
             )
-            # Get text content, limit to first 50KB
             content = resp.text[:50000] if resp.text else ""
             return resp.status_code, content
         except requests.RequestException:
@@ -144,25 +143,20 @@ def classify_content(content: str) -> str:
     
     content_lower = content.lower()
     
-    # Check for seized indicators first (higher priority)
     seized_matches = sum(1 for p in SEIZED_PATTERNS if p.search(content_lower))
-    if seized_matches >= 2:  # Require multiple matches for confidence
+    if seized_matches >= 2:
         return "Blocked/Seized"
     
-    # Check for parked indicators
     parked_matches = sum(1 for p in PARKED_PATTERNS if p.search(content_lower))
-    if parked_matches >= 2:  # Require multiple matches for confidence
+    if parked_matches >= 2:
         return "Parked"
     
-    # If we got content and it's substantial, assume online
-    # Filter out very short pages (likely errors or redirects)
-    text_content = re.sub(r'<[^>]+>', '', content)  # Strip HTML
+    text_content = re.sub(r'<[^>]+>', '', content)
     text_content = re.sub(r'\s+', ' ', text_content).strip()
     
     if len(text_content) > 500:
         return "Online"
     elif len(text_content) > 100:
-        # Short content, could be parking or minimal site
         if parked_matches >= 1:
             return "Parked"
         return "Online"
@@ -170,12 +164,12 @@ def classify_content(content: str) -> str:
         return "Unknown"
 
 
-def check_domain(domain: str, token: str) -> dict:
-    """Check single domain's online status with content analysis."""
+def check_dns_only(domain: str, token: str) -> dict:
+    """Fast DNS-only check with IPinfo."""
     result = {
         "domain": domain,
         "checked_at": datetime.now().isoformat(),
-        "online_status": "Unknown",
+        "online_status": "Offline",
         "ip": None,
         "http_status": None,
         "country": None,
@@ -184,19 +178,18 @@ def check_domain(domain: str, token: str) -> dict:
         "asn": None,
         "as_name": None,
         "as_domain": None,
-        "error": None,
+        "error": "DNS_FAILED",
     }
     
-    # Step 1: DNS resolution
     ip = resolve_dns(domain)
     if not ip:
-        result["online_status"] = "Offline"
-        result["error"] = "DNS_FAILED"
         return result
     
     result["ip"] = ip
+    result["online_status"] = "DNS_OK"  # Temporary, will be updated in phase 2
+    result["error"] = None
     
-    # Step 2: IPinfo lookup
+    # IPinfo lookup
     info = get_ipinfo(ip, token)
     if "error" not in info:
         result["country"] = info.get("country")
@@ -206,20 +199,23 @@ def check_domain(domain: str, token: str) -> dict:
         result["as_name"] = info.get("as_name")
         result["as_domain"] = info.get("as_domain")
     
-    # Step 3: HTTP fetch and content analysis
+    return result
+
+
+def check_http_content(result: dict) -> dict:
+    """HTTP + content check for DNS-success domains."""
+    domain = result["domain"]
+    
     status_code, content = fetch_page(domain)
     result["http_status"] = status_code
     
     if status_code is None:
-        # DNS resolved but HTTP failed
         result["online_status"] = "Offline"
         result["error"] = "HTTP_FAILED"
         return result
     
     if status_code >= 400:
-        # HTTP error
         if status_code == 403:
-            # Could be blocked or Cloudflare protection
             result["online_status"] = "Unknown"
             result["error"] = f"HTTP_{status_code}"
         elif status_code == 404:
@@ -233,9 +229,7 @@ def check_domain(domain: str, token: str) -> dict:
             result["error"] = f"HTTP_{status_code}"
         return result
     
-    # Step 4: Content classification
     result["online_status"] = classify_content(content)
-    
     return result
 
 
@@ -261,16 +255,15 @@ def load_domains_from_file(filepath: str) -> list[str]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Check domain online status via IPinfo + HTTP")
+    parser = argparse.ArgumentParser(description="Check domain online status (hybrid DNS + HTTP)")
     parser.add_argument("--token", required=True, help="IPinfo API token")
     parser.add_argument("--domains", help="Path to domain list file (one per line)")
     parser.add_argument("--limit", type=int, help="Limit number of domains to check")
     parser.add_argument("--output", default="data/online_status.csv", help="Output CSV path")
-    parser.add_argument("--workers", type=int, default=10, help="Concurrent workers")
+    parser.add_argument("--workers", type=int, default=20, help="Concurrent workers")
     parser.add_argument("--resume", action="store_true", help="Skip already-checked domains")
     args = parser.parse_args()
     
-    # Suppress SSL warnings
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
@@ -280,9 +273,9 @@ def main():
     else:
         domains = load_domains_from_gtr(args.limit)
     
-    print(f"Loaded {len(domains)} domains to check")
+    print(f"Loaded {len(domains)} domains")
     
-    # Resume support - skip already checked
+    # Resume support
     output_path = Path(__file__).parent.parent / args.output
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
@@ -293,36 +286,62 @@ def main():
         print(f"Resuming: {len(checked)} already checked")
     
     domains = [d for d in domains if d not in checked]
-    print(f"Checking {len(domains)} domains...")
+    print(f"Checking {len(domains)} domains...\n")
     
     if not domains:
         print("Nothing to check!")
         return
     
-    # Process with thread pool
-    results = []
+    # === PHASE 1: Fast DNS + IPinfo ===
+    print("=== Phase 1: DNS + IPinfo (fast) ===")
+    dns_results = []
     start = time.time()
     
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
-        futures = {executor.submit(check_domain, d, args.token): d for d in domains}
+        futures = {executor.submit(check_dns_only, d, args.token): d for d in domains}
         
         for i, future in enumerate(as_completed(futures), 1):
             result = future.result()
-            results.append(result)
+            dns_results.append(result)
             
-            # Progress
-            if i % 100 == 0 or i == len(domains):
+            if i % 500 == 0 or i == len(domains):
                 elapsed = time.time() - start
                 rate = i / elapsed
+                dns_ok = sum(1 for r in dns_results if r["online_status"] == "DNS_OK")
+                print(f"[{i}/{len(domains)}] {rate:.1f}/s | DNS OK: {dns_ok} | Offline: {i - dns_ok}")
+    
+    dns_ok_results = [r for r in dns_results if r["online_status"] == "DNS_OK"]
+    dns_fail_results = [r for r in dns_results if r["online_status"] == "Offline"]
+    
+    print(f"\nPhase 1 complete: {len(dns_ok_results)} DNS OK, {len(dns_fail_results)} Offline")
+    
+    # === PHASE 2: HTTP + Content for DNS-OK domains ===
+    print(f"\n=== Phase 2: HTTP + Content ({len(dns_ok_results)} domains) ===")
+    start = time.time()
+    
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = {executor.submit(check_http_content, r): r["domain"] for r in dns_ok_results}
+        
+        http_results = []
+        for i, future in enumerate(as_completed(futures), 1):
+            result = future.result()
+            http_results.append(result)
+            
+            if i % 200 == 0 or i == len(dns_ok_results):
+                elapsed = time.time() - start
+                rate = i / elapsed if elapsed > 0 else 0
                 status_counts = {}
-                for r in results:
+                for r in http_results:
                     s = r["online_status"]
                     status_counts[s] = status_counts.get(s, 0) + 1
                 status_str = " | ".join(f"{k}: {v}" for k, v in sorted(status_counts.items()))
-                print(f"[{i}/{len(domains)}] {rate:.1f}/s | {status_str}")
+                print(f"[{i}/{len(dns_ok_results)}] {rate:.1f}/s | {status_str}")
     
-    # Save results
-    df = pd.DataFrame(results)
+    # Combine results
+    all_results = dns_fail_results + http_results
+    
+    # Save
+    df = pd.DataFrame(all_results)
     
     if args.resume and output_path.exists():
         existing = pd.read_csv(output_path)
@@ -331,11 +350,11 @@ def main():
     df.to_csv(output_path, index=False)
     
     # Summary
-    print(f"\nDone! Results saved to {output_path}")
+    print(f"\n{'='*50}")
+    print(f"Done! Results saved to {output_path}")
     print(f"\nStatus breakdown:")
     print(df["online_status"].value_counts().to_string())
     
-    # Top hosting providers for online sites
     online_df = df[df["online_status"] == "Online"]
     if len(online_df) > 0 and "as_name" in df.columns:
         print("\nTop hosting providers (Online sites):")
