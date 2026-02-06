@@ -22,7 +22,7 @@ import requests
 
 # Add parent dir for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import DATA_SOURCES
+from config import DATASETS
 
 
 def resolve_dns(domain: str, timeout: float = 5.0) -> str | None:
@@ -91,7 +91,7 @@ def check_domain(domain: str, token: str) -> dict:
 
 def load_domains_from_gtr(limit: int | None = None) -> list[str]:
     """Load domains from the curated GTR dataset."""
-    curated_path = Path(DATA_SOURCES["curated"]["path"]).expanduser()
+    curated_path = DATASETS["video_piracy"]["path"]
     if not curated_path.exists():
         raise FileNotFoundError(f"GTR data not found: {curated_path}")
     
