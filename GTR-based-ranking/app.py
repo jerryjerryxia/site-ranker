@@ -568,11 +568,15 @@ def main():
     """Main application."""
     
     # Minimal header
-    col1, col2 = st.columns([4, 1])
+    col1, col2, col3 = st.columns([4, 1, 0.5])
     with col1:
         st.markdown("## 🔍 Domain Activity & Coverage Intelligence System")
     with col2:
         use_full = st.checkbox("Full dataset (6M)", value=False, help="Load complete GTR data")
+    with col3:
+        if st.button("🔄", help="Refresh data (clear cache)"):
+            st.cache_data.clear()
+            st.rerun()
     
     # Load data
     with st.spinner("Loading..."):
