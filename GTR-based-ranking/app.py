@@ -524,8 +524,7 @@ def main():
     # Minimal header
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.markdown("## 🔍 DACIS")
-        st.caption("Domain Activity & Coverage Intelligence System")
+        st.markdown("## 🔍 Domain Activity & Coverage Intelligence System")
     with col2:
         use_full = st.checkbox("Full dataset (6M)", value=False, help="Load complete GTR data")
     
