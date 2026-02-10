@@ -278,7 +278,7 @@ def render_filters(df: pd.DataFrame) -> pd.DataFrame:
     """Filter row with dropdowns always visible."""
     
     # All filters in one row with consistent labels
-    c1, c2, c3, c4, c5, c6 = st.columns([3, 2, 2, 2, 2, 1])
+    c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2])
     
     with c1:
         search = st.text_input("Search", placeholder="Enter domain...", label_visibility="visible")
@@ -290,9 +290,10 @@ def render_filters(df: pd.DataFrame) -> pd.DataFrame:
         tier_filter = st.multiselect("Volume", ['1M+', '100K-1M', '10K-100K', '1K-10K', '<1K'], placeholder="All")
     with c5:
         online_options = sorted(df['online_status'].dropna().unique().tolist())
+        # Add "Needs Review" option if there are flagged domains
+        if 'needs_review' in df.columns and df['needs_review'].any():
+            online_options = online_options + ['⚠️ Needs Review']
         online_filter = st.multiselect("Online", online_options, placeholder="All")
-    with c6:
-        review_only = st.checkbox("⚠️ Review", help="Show only domains flagged for review")
     
     # Apply filters
     filtered = df.copy()
@@ -305,9 +306,15 @@ def render_filters(df: pd.DataFrame) -> pd.DataFrame:
     if tier_filter:
         filtered = filtered[filtered['volume_tier'].isin(tier_filter)]
     if online_filter:
-        filtered = filtered[filtered['online_status'].isin(online_filter)]
-    if review_only and 'needs_review' in df.columns:
-        filtered = filtered[filtered['needs_review'] == True]
+        # Handle "Needs Review" specially
+        if '⚠️ Needs Review' in online_filter:
+            other_filters = [f for f in online_filter if f != '⚠️ Needs Review']
+            if other_filters:
+                filtered = filtered[(filtered['online_status'].isin(other_filters)) | (filtered['needs_review'] == True)]
+            else:
+                filtered = filtered[filtered['needs_review'] == True]
+        else:
+            filtered = filtered[filtered['online_status'].isin(online_filter)]
     
     return filtered
 
