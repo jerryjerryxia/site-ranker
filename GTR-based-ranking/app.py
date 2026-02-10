@@ -600,8 +600,11 @@ def render_domain_detail(df: pd.DataFrame):
 
 @st.cache_data(ttl=3600)
 def load_coverage_data():
-    """Load VT coverage data."""
-    coverage_path = Path(__file__).parent / "data" / "VT_LSR_Site.xlsx"
+    """Load combined coverage data (VT + V1)."""
+    coverage_path = Path(__file__).parent / "data" / "Coverage_Sites.xlsx"
+    # Fall back to VT-only if combined doesn't exist
+    if not coverage_path.exists():
+        coverage_path = Path(__file__).parent / "data" / "VT_LSR_Site.xlsx"
     if coverage_path.exists():
         df = pd.read_excel(coverage_path)
         return df
