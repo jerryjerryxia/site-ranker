@@ -278,7 +278,7 @@ def render_filters(df: pd.DataFrame) -> pd.DataFrame:
     """Filter row with dropdowns always visible."""
     
     # All filters in one row with consistent labels
-    c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2])
+    c1, c2, c3, c4, c5, c6 = st.columns([3, 2, 2, 2, 2, 1])
     
     with c1:
         search = st.text_input("Search", placeholder="Enter domain...", label_visibility="visible")
@@ -289,8 +289,10 @@ def render_filters(df: pd.DataFrame) -> pd.DataFrame:
     with c4:
         tier_filter = st.multiselect("Volume", ['1M+', '100K-1M', '10K-100K', '1K-10K', '<1K'], placeholder="All")
     with c5:
-        online_options = df['online_status'].dropna().unique().tolist()
+        online_options = sorted(df['online_status'].dropna().unique().tolist())
         online_filter = st.multiselect("Online", online_options, placeholder="All")
+    with c6:
+        review_only = st.checkbox("⚠️ Review", help="Show only domains flagged for review")
     
     # Apply filters
     filtered = df.copy()
@@ -304,6 +306,8 @@ def render_filters(df: pd.DataFrame) -> pd.DataFrame:
         filtered = filtered[filtered['volume_tier'].isin(tier_filter)]
     if online_filter:
         filtered = filtered[filtered['online_status'].isin(online_filter)]
+    if review_only and 'needs_review' in df.columns:
+        filtered = filtered[filtered['needs_review'] == True]
     
     return filtered
 
@@ -569,19 +573,22 @@ def render_domain_detail(df: pd.DataFrame):
                 "Parked": "🅿️",
                 "Blocked/Seized": "🚫",
                 "Unknown": "❓",
+                "DNS_OK": "🟡",
                 "Not Checked": "⚪",
             }
             online_status = row.get('online_status', 'Unknown')
             icon = status_icons.get(online_status, "❓")
             st.write(f"{icon} **{online_status}**")
+            if row.get('asn_category'):
+                st.write(f"**Type:** {row['asn_category']}")
+            if row.get('needs_review'):
+                st.warning("⚠️ Flagged for review")
             if row.get('ip'):
                 st.write(f"**IP:** `{row['ip']}`")
             if row.get('country'):
                 st.write(f"**Country:** {row['country']}")
             if row.get('as_name'):
                 st.write(f"**Host:** {row['as_name']}")
-            if row.get('asn'):
-                st.write(f"**ASN:** {row['asn']}")
 
 
 def main():

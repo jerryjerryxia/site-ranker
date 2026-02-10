@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 HTTP + content check for domains that already passed DNS.
-Uses existing DNS results and adds content classification.
+Saves progress incrementally to survive interruptions.
 """
 
 import argparse
@@ -136,7 +136,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True, help="Original DNS results CSV")
     parser.add_argument("--output", required=True, help="Output CSV")
-    parser.add_argument("--workers", type=int, default=20)
+    parser.add_argument("--workers", type=int, default=10)
+    parser.add_argument("--save-every", type=int, default=500, help="Save progress every N domains")
     args = parser.parse_args()
     
     import urllib3
@@ -147,45 +148,76 @@ def main():
     dns_ok = df[df['online'] == True].copy()
     dns_fail = df[df['online'] == False].copy()
     
-    print(f"DNS OK: {len(dns_ok)} | DNS Fail: {len(dns_fail)}")
-    print(f"\nRunning HTTP checks on {len(dns_ok)} domains...")
+    # Check for existing progress
+    output_path = Path(args.output)
+    checked_domains = set()
+    existing_results = []
     
-    # HTTP check DNS-OK domains
-    results = []
+    if output_path.exists():
+        existing = pd.read_csv(output_path)
+        checked_domains = set(existing['domain'].tolist())
+        existing_results = existing.to_dict('records')
+        print(f"Resuming: {len(checked_domains)} already checked")
+    
+    # Filter to unchecked DNS-OK domains
+    domains_to_check = [d for d in dns_ok['domain'].tolist() if d not in checked_domains]
+    
+    print(f"DNS OK: {len(dns_ok)} | DNS Fail: {len(dns_fail)} | Already checked: {len(checked_domains)}")
+    print(f"Checking {len(domains_to_check)} remaining domains...\n")
+    
+    if not domains_to_check:
+        print("Nothing to check!")
+        return
+    
+    # HTTP check with incremental saves
+    results = list(existing_results)
     start = time.time()
+    batch_start = len(results)
     
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
-        futures = {executor.submit(check_domain, d): d for d in dns_ok['domain'].tolist()}
+        futures = {executor.submit(check_domain, d): d for d in domains_to_check}
         
         for i, future in enumerate(as_completed(futures), 1):
             results.append(future.result())
             
-            if i % 200 == 0 or i == len(dns_ok):
+            # Progress + incremental save
+            if i % args.save_every == 0 or i == len(domains_to_check):
                 elapsed = time.time() - start
-                rate = i / elapsed
+                rate = i / elapsed if elapsed > 0 else 0
                 counts = {}
-                for r in results:
+                for r in results[batch_start:]:
                     s = r["online_status"]
                     counts[s] = counts.get(s, 0) + 1
-                print(f"[{i}/{len(dns_ok)}] {rate:.1f}/s | " + " | ".join(f"{k}: {v}" for k, v in sorted(counts.items())))
+                print(f"[{i}/{len(domains_to_check)}] {rate:.1f}/s | " + " | ".join(f"{k}: {v}" for k, v in sorted(counts.items())))
+                
+                # Save checkpoint
+                temp_df = pd.DataFrame(results)
+                temp_df.to_csv(output_path, index=False)
+                print(f"  (saved checkpoint: {len(results)} records)")
     
-    # Merge HTTP results back
+    # Final merge with DNS data
+    print("\nMerging with DNS data...")
     http_df = pd.DataFrame(results)
-    dns_ok = dns_ok.drop(columns=['online'], errors='ignore')
-    dns_ok = dns_ok.merge(http_df, on='domain', how='left')
+    
+    # Merge HTTP results with DNS-OK data
+    dns_ok_merged = dns_ok.drop(columns=['online'], errors='ignore')
+    dns_ok_merged = dns_ok_merged.merge(http_df[['domain', 'online_status', 'http_status', 'error']], on='domain', how='left')
+    
+    # Handle any DNS-OK domains that weren't HTTP checked (shouldn't happen but just in case)
+    dns_ok_merged['online_status'] = dns_ok_merged['online_status'].fillna('Unknown')
     
     # Update DNS fail with proper status
-    dns_fail['online_status'] = 'Offline'
-    dns_fail['http_status'] = None
-    dns_fail['error'] = 'DNS_FAILED'
-    dns_fail = dns_fail.drop(columns=['online'], errors='ignore')
+    dns_fail_updated = dns_fail.drop(columns=['online'], errors='ignore')
+    dns_fail_updated['online_status'] = 'Offline'
+    dns_fail_updated['http_status'] = None
+    dns_fail_updated['error'] = 'DNS_FAILED'
     
-    # Combine and save
-    final = pd.concat([dns_ok, dns_fail], ignore_index=True)
+    # Combine and save final
+    final = pd.concat([dns_ok_merged, dns_fail_updated], ignore_index=True)
     final['checked_at'] = datetime.now().isoformat()
-    final.to_csv(args.output, index=False)
+    final.to_csv(output_path, index=False)
     
-    print(f"\nDone! Saved to {args.output}")
+    print(f"\nDone! Saved to {output_path}")
     print(f"\nStatus breakdown:")
     print(final['online_status'].value_counts().to_string())
 
