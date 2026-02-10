@@ -635,13 +635,16 @@ def render_coverage_tab():
         st.metric("Episodes Tracked", f"{total_episodes:,.0f}")
     
     # Filters
-    c1, c2, c3 = st.columns([3, 1, 2])
+    c1, c2, c3, c4 = st.columns([3, 1, 1, 2])
     
     with c1:
         search = st.text_input("Search site", placeholder="Enter site name...", key="coverage_search")
     with c2:
         active_filter = st.selectbox("Status", ["All", "Active Only", "Inactive Only"], key="coverage_active")
     with c3:
+        supported_options = ["All"] + sorted(df['Supported By'].dropna().unique().tolist())
+        supported_filter = st.selectbox("Source", supported_options, key="coverage_supported")
+    with c4:
         sort_by = st.selectbox("Sort by", ["Total Series Count", "Total Episode Count", "Website Name"], key="coverage_sort")
     
     # Apply filters
@@ -655,6 +658,9 @@ def render_coverage_tab():
     elif active_filter == "Inactive Only":
         filtered = filtered[filtered['Active Status'] == False]
     
+    if supported_filter != "All":
+        filtered = filtered[filtered['Supported By'] == supported_filter]
+    
     # Sort
     ascending = sort_by == "Website Name"
     filtered = filtered.sort_values(sort_by, ascending=ascending)
@@ -664,8 +670,8 @@ def render_coverage_tab():
         st.caption(f"Showing {len(filtered):,} of {len(df):,} sites")
     
     # Display table
-    display_df = filtered[['Website Name', 'Active Status', 'Total Series Count', 'Total Episode Count']].copy()
-    display_df.columns = ['Site', 'Active', 'Series', 'Episodes']
+    display_df = filtered[['Website Name', 'Supported By', 'Active Status', 'Total Series Count', 'Total Episode Count']].copy()
+    display_df.columns = ['Site', 'Source', 'Active', 'Series', 'Episodes']
     display_df['Series'] = display_df['Series'].apply(lambda x: f"{x:,.0f}")
     display_df['Episodes'] = display_df['Episodes'].apply(lambda x: f"{x:,.0f}")
     display_df['Active'] = display_df['Active'].map({True: '✅', False: '❌'})
