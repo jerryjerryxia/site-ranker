@@ -591,6 +591,89 @@ def render_domain_detail(df: pd.DataFrame):
                 st.write(f"**Host:** {row['as_name']}")
 
 
+@st.cache_data(ttl=3600)
+def load_coverage_data():
+    """Load VT coverage data."""
+    coverage_path = Path(__file__).parent / "data" / "VT_LSR_Site.xlsx"
+    if coverage_path.exists():
+        df = pd.read_excel(coverage_path)
+        return df
+    return None
+
+
+def render_coverage_tab():
+    """Render the Current Coverage tab."""
+    st.markdown("### Current Coverage")
+    st.caption("Sites within Vobile's VideoTracker coverage map")
+    
+    # Load data
+    df = load_coverage_data()
+    if df is None:
+        st.warning("Coverage data not found. Please add VT_LSR_Site.xlsx to the data folder.")
+        return
+    
+    # Metrics
+    m1, m2, m3, m4 = st.columns(4)
+    active_count = df['Active Status'].sum()
+    total_series = df['Total Series Count'].sum()
+    total_episodes = df['Total Episode Count'].sum()
+    
+    with m1:
+        st.metric("Total Sites", f"{len(df):,}")
+    with m2:
+        st.metric("Active", f"{active_count:,}", f"{active_count/len(df)*100:.1f}%")
+    with m3:
+        st.metric("Series Tracked", f"{total_series:,.0f}")
+    with m4:
+        st.metric("Episodes Tracked", f"{total_episodes:,.0f}")
+    
+    # Filters
+    c1, c2, c3 = st.columns([3, 1, 2])
+    
+    with c1:
+        search = st.text_input("Search site", placeholder="Enter site name...", key="coverage_search")
+    with c2:
+        active_filter = st.selectbox("Status", ["All", "Active Only", "Inactive Only"], key="coverage_active")
+    with c3:
+        sort_by = st.selectbox("Sort by", ["Total Series Count", "Total Episode Count", "Website Name"], key="coverage_sort")
+    
+    # Apply filters
+    filtered = df.copy()
+    
+    if search:
+        filtered = filtered[filtered['Website Name'].str.contains(search.lower(), case=False, na=False)]
+    
+    if active_filter == "Active Only":
+        filtered = filtered[filtered['Active Status'] == True]
+    elif active_filter == "Inactive Only":
+        filtered = filtered[filtered['Active Status'] == False]
+    
+    # Sort
+    ascending = sort_by == "Website Name"
+    filtered = filtered.sort_values(sort_by, ascending=ascending)
+    
+    # Show count
+    if len(filtered) != len(df):
+        st.caption(f"Showing {len(filtered):,} of {len(df):,} sites")
+    
+    # Display table
+    display_df = filtered[['Website Name', 'Active Status', 'Total Series Count', 'Total Episode Count']].copy()
+    display_df.columns = ['Site', 'Active', 'Series', 'Episodes']
+    display_df['Series'] = display_df['Series'].apply(lambda x: f"{x:,.0f}")
+    display_df['Episodes'] = display_df['Episodes'].apply(lambda x: f"{x:,.0f}")
+    display_df['Active'] = display_df['Active'].map({True: '✅', False: '❌'})
+    
+    st.dataframe(display_df, use_container_width=True, hide_index=True, height=500)
+    
+    # Export
+    st.download_button(
+        "📥 Export Coverage Data",
+        filtered.to_csv(index=False),
+        f"vobile_coverage_{datetime.now().strftime('%Y%m%d')}.csv",
+        "text/csv"
+    )
+
+
 def main():
     """Main application."""
     
@@ -614,7 +697,7 @@ def main():
             st.stop()
     
     # Main tabs
-    tab1, tab2, tab3 = st.tabs(["📋 Domains", "📤 Upload", "🔎 Lookup"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 Domains", "📤 Upload", "🔎 Lookup", "🗺️ Coverage"])
     
     with tab1:
         # Metric cards at top
@@ -654,6 +737,9 @@ def main():
     
     with tab3:
         render_domain_detail(df)
+    
+    with tab4:
+        render_coverage_tab()
     
     # Footer
     st.divider()
