@@ -265,11 +265,11 @@ def render_quick_stats(df: pd.DataFrame, compact: bool = False):
     with cols[0]:
         st.metric("Domains", f"{len(df):,}")
     with cols[1]:
-        st.metric("Active", f"{active:,}", f"{active/len(df)*100:.1f}%" if len(df) > 0 else None)
+        st.metric("Active", f"{active:,}")
     with cols[2]:
         st.metric("Rising", f"{rising:,}")
     with cols[3]:
-        st.metric("High Volume", f"{high_vol:,}", "≥100K removals")
+        st.metric("High Volume", f"{high_vol:,}")
     with cols[4]:
         st.metric("Total Removed", format_number(df['total_urls_removed'].sum()))
 
@@ -631,7 +631,7 @@ def render_coverage_tab():
     with m1:
         st.metric("Total Sites", f"{len(df):,}")
     with m2:
-        st.metric("Active", f"{active_count:,}", f"{active_count/len(df)*100:.1f}%")
+        st.metric("Active", f"{active_count:,}")
     with m3:
         st.metric("Series Tracked", f"{total_series:,.0f}")
     with m4:
@@ -725,11 +725,11 @@ def main():
         with m1:
             st.metric("Total Domains", f"{len(df):,}")
         with m2:
-            st.metric("Active", f"{active:,}", f"{active/len(df)*100:.1f}%")
+            st.metric("Active", f"{active:,}")
         with m3:
             st.metric("Rising Trend", f"{rising:,}")
         with m4:
-            st.metric("High Volume", f"{high_vol:,}", "≥100K")
+            st.metric("High Volume", f"{high_vol:,}")
         
         # Filters
         filtered_df = render_filters(df)
