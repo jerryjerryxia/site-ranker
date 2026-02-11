@@ -669,9 +669,8 @@ def render_coverage_tab():
     ascending = sort_by == "Website Name"
     filtered = filtered.sort_values(sort_by, ascending=ascending)
     
-    # Show count
-    if len(filtered) != len(df):
-        st.caption(f"Showing {len(filtered):,} of {len(df):,} sites")
+    # Show count (always visible)
+    st.caption(f"Showing {len(filtered):,} of {len(df):,} sites")
     
     # Display table
     display_df = filtered[['Website Name', 'Supported By', 'Active Status', 'Total Series Count', 'Total Episode Count']].copy()
