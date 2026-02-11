@@ -611,6 +611,7 @@ def load_coverage_data():
     return None
 
 
+@st.fragment
 def render_coverage_tab():
     """Render the Current Coverage tab."""
     st.markdown("### Current Coverage")
