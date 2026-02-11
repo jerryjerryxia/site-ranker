@@ -281,19 +281,19 @@ def render_filters(df: pd.DataFrame) -> pd.DataFrame:
     c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2])
     
     with c1:
-        search = st.text_input("Search", placeholder="Enter domain...", label_visibility="visible")
+        search = st.text_input("Search", placeholder="Enter domain...", label_visibility="visible", key="domain_search")
     with c2:
-        status_filter = st.multiselect("Status", ['Active', 'Low Activity', 'Declining', 'Inactive', 'Unknown'], placeholder="All")
+        status_filter = st.multiselect("Status", ['Active', 'Low Activity', 'Declining', 'Inactive', 'Unknown'], placeholder="All", key="domain_status")
     with c3:
-        trend_filter = st.multiselect("Trend", ['Rising', 'Stable', 'Declining', 'No Data'], placeholder="All")
+        trend_filter = st.multiselect("Trend", ['Rising', 'Stable', 'Declining', 'No Data'], placeholder="All", key="domain_trend")
     with c4:
-        tier_filter = st.multiselect("Volume", ['1M+', '100K-1M', '10K-100K', '1K-10K', '<1K'], placeholder="All")
+        tier_filter = st.multiselect("Volume", ['1M+', '100K-1M', '10K-100K', '1K-10K', '<1K'], placeholder="All", key="domain_volume")
     with c5:
         online_options = sorted(df['online_status'].dropna().unique().tolist())
         # Add "Needs Review" option if there are flagged domains
         if 'needs_review' in df.columns and df['needs_review'].any():
             online_options = online_options + ['⚠️ Needs Review']
-        online_filter = st.multiselect("Online", online_options, placeholder="All")
+        online_filter = st.multiselect("Online", online_options, placeholder="All", key="domain_online")
     
     # Apply filters
     filtered = df.copy()
@@ -333,7 +333,7 @@ def render_domain_table(df: pd.DataFrame):
     }
     sort_col1, sort_col2 = st.columns([1, 4])
     with sort_col1:
-        sort_choice = st.selectbox("Sort by", options=list(sort_options.keys()), index=0, label_visibility="collapsed")
+        sort_choice = st.selectbox("Sort by", options=list(sort_options.keys()), index=0, label_visibility="collapsed", key="domain_sort")
     sort_col, ascending = sort_options[sort_choice]
     
     # Sort data
@@ -377,7 +377,7 @@ def render_domain_table(df: pd.DataFrame):
             st.rerun()
     
     with pc5:
-        new_size = st.selectbox("Rows", options=[25, 50, 100, 200], index=[25, 50, 100, 200].index(page_size), label_visibility="collapsed")
+        new_size = st.selectbox("Rows", options=[25, 50, 100, 200], index=[25, 50, 100, 200].index(page_size), label_visibility="collapsed", key="domain_page_size")
         if new_size != page_size:
             st.session_state['page_size'] = new_size
             st.session_state['page'] = 1
@@ -522,7 +522,7 @@ def render_csv_upload(full_df: pd.DataFrame):
 def render_domain_detail(df: pd.DataFrame):
     """Clean domain detail view."""
     
-    search = st.text_input("Enter domain", placeholder="rapidgator.net")
+    search = st.text_input("Enter domain", placeholder="rapidgator.net", key="lookup_search")
     
     if not search:
         st.info("Enter a domain above to see detailed intelligence.")
